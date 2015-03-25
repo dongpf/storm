@@ -15,12 +15,13 @@
 ;; limitations under the License.
 
 (ns backtype.storm.config
-  (:import [java.io FileReader File])
+  (:import [java.io FileReader File IOException]
+           [backtype.storm.generated StormTopology])
   (:import [backtype.storm Config ConfigValidation$FieldValidator])
   (:import [backtype.storm.utils Utils LocalState])
   (:import [org.apache.commons.io FileUtils])
   (:require [clojure [string :as str]])
-  (:use [backtype.storm util]))
+  (:use [backtype.storm log util]))
 
 (def RESOURCES-SUBDIR "resources")
 
@@ -123,10 +124,12 @@
     conf))
 
 (defn read-yaml-config
-  [name]
-  (let [conf (clojurify-structure (Utils/findAndReadConfigFile name true))]
-    (validate-configs-with-schemas conf)
-    conf))
+  ([name must-exist]
+     (let [conf (clojurify-structure (Utils/findAndReadConfigFile name must-exist))]
+       (validate-configs-with-schemas conf)
+       conf))
+  ([name]
+     (read-yaml-config true)))
 
 (defn master-local-dir
   [conf]
@@ -209,15 +212,40 @@
   (let [stormroot (supervisor-stormdist-root conf storm-id)
         conf-path (supervisor-stormconf-path stormroot)
         topology-path (supervisor-stormcode-path stormroot)]
-    (merge conf (Utils/deserialize (FileUtils/readFileToByteArray (File. conf-path))))
-    ))
+    (merge conf (clojurify-structure (Utils/javaDeserialize (FileUtils/readFileToByteArray (File. conf-path)) java.util.Map)))))
 
 (defn read-supervisor-topology
   [conf storm-id]
   (let [stormroot (supervisor-stormdist-root conf storm-id)
         topology-path (supervisor-stormcode-path stormroot)]
-    (Utils/deserialize (FileUtils/readFileToByteArray (File. topology-path)))
+    (Utils/deserialize (FileUtils/readFileToByteArray (File. topology-path)) StormTopology)
     ))
+
+(defn worker-user-root [conf]
+  (str (conf STORM-LOCAL-DIR) "/workers-users"))
+
+(defn worker-user-file [conf worker-id]
+  (str (worker-user-root conf) "/" worker-id))
+
+(defn get-worker-user [conf worker-id]
+  (log-message "GET worker-user " worker-id)
+  (try
+    (str/trim (slurp (worker-user-file conf worker-id)))
+  (catch IOException e
+    (log-warn-error e "Failed to get worker user for " worker-id ".")
+    nil
+    )))
+
+  
+(defn set-worker-user! [conf worker-id user]
+  (log-message "SET worker-user " worker-id " " user)
+  (let [file (worker-user-file conf worker-id)]
+    (.mkdirs (.getParentFile (File. file)))
+    (spit (worker-user-file conf worker-id) user)))
+
+(defn remove-worker-user! [conf worker-id]
+  (log-message "REMOVE worker-user " worker-id)
+  (.delete (File. (worker-user-file conf worker-id))))
 
 (defn worker-root
   ([conf]

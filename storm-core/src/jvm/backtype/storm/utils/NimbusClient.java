@@ -19,6 +19,7 @@ package backtype.storm.utils;
 
 import backtype.storm.Config;
 import backtype.storm.security.auth.ThriftClient;
+import backtype.storm.security.auth.ThriftConnectionType;
 import backtype.storm.generated.Nimbus;
 import java.util.Map;
 import org.apache.thrift.transport.TTransportException;
@@ -29,11 +30,20 @@ public class NimbusClient extends ThriftClient {
     private Nimbus.Client _client;
     private static final Logger LOG = LoggerFactory.getLogger(NimbusClient.class);
 
+
     public static NimbusClient getConfiguredClient(Map conf) {
         try {
             String nimbusHost = (String) conf.get(Config.NIMBUS_HOST);
-            int nimbusPort = Utils.getInt(conf.get(Config.NIMBUS_THRIFT_PORT));
-            return new NimbusClient(conf, nimbusHost, nimbusPort);
+            return new NimbusClient(conf, nimbusHost);
+        } catch (TTransportException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public static NimbusClient getConfiguredClientAs(Map conf, String asUser) {
+        try {
+            String nimbusHost = (String) conf.get(Config.NIMBUS_HOST);
+            return new NimbusClient(conf, nimbusHost, null, null, asUser);
         } catch (TTransportException ex) {
             throw new RuntimeException(ex);
         }
@@ -44,7 +54,17 @@ public class NimbusClient extends ThriftClient {
     }
 
     public NimbusClient(Map conf, String host, int port, Integer timeout) throws TTransportException {
-        super(conf, host, port, timeout);
+        super(conf, ThriftConnectionType.NIMBUS, host, port, timeout, null);
+        _client = new Nimbus.Client(_protocol);
+    }
+
+    public NimbusClient(Map conf, String host, Integer port, Integer timeout, String asUser) throws TTransportException {
+        super(conf, ThriftConnectionType.NIMBUS, host, port, timeout, asUser);
+        _client = new Nimbus.Client(_protocol);
+    }
+
+    public NimbusClient(Map conf, String host) throws TTransportException {
+        super(conf, ThriftConnectionType.NIMBUS, host, null, null, null);
         _client = new Nimbus.Client(_protocol);
     }
 
